@@ -5,7 +5,7 @@ import threading
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
+from google import genai as genai_client
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from flask import Flask
@@ -19,8 +19,8 @@ GEMINI_API_KEY   = os.environ["GEMINI_API_KEY"]
 OWNER_ID         = int(os.environ["OWNER_ID"])     # ваш Telegram ID
 TIMEZONE         = "Europe/Moscow"
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai_client.Client(api_key=GEMINI_API_KEY)
+MODEL  = "gemini-1.5-flash"
 
 # ── State ────────────────────────────────────────────────
 posted_hashes: set = set()
@@ -76,7 +76,7 @@ def score_articles(articles: list[dict]) -> list[dict]:
         f"Headlines:\n{titles}"
     )
     try:
-        resp   = model.generate_content(prompt)
+        resp   = client.models.generate_content(model=MODEL, contents=prompt)
         text   = resp.text.strip().lstrip("```json").rstrip("```").strip()
         scores = sorted(json.loads(text), key=lambda x: x["score"], reverse=True)
         return [articles[s["index"] - 1] for s in scores[:3]
@@ -99,7 +99,7 @@ def rewrite_article(article: dict) -> str | None:
         f"URL: {article['link']}"
     )
     try:
-        return model.generate_content(prompt).text.strip()
+        return client.models.generate_content(model=MODEL, contents=prompt).text.strip()
     except Exception as e:
         print(f"Rewrite error: {e}")
         return None
@@ -229,7 +229,7 @@ def home():
     return "Bot is running ✅", 200
 
 def run_flask():
-    flask_app.run(host="0.0.0.0", port=8080)
+    flask_app.run(host="0.0.0.0", port=5000)
 
 
 # ── Entry point ──────────────────────────────────────────
