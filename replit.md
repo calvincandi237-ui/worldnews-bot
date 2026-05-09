@@ -1,45 +1,53 @@
-# [Project name]
+# Telegram News Bot
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Python Telegram bot that delivers news from RSS feeds with on-demand headlines, category browsing, topic subscriptions, keyword search, and scheduled daily digests.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `cd bot && python bot.py` — run the Telegram bot (managed via the "Telegram News Bot" workflow)
+- Required env: `TELEGRAM_BOT_TOKEN` — Telegram bot token from @BotFather
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.11
+- python-telegram-bot 21.x (with APScheduler job queue)
+- feedparser — RSS feed parsing
+- JSON file storage for user subscriptions/settings
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `bot/bot.py` — main bot logic, command handlers, callback handlers
+- `bot/feeds.py` — RSS feed URLs organized by category
+- `bot/fetcher.py` — RSS fetching, parsing, formatting
+- `bot/storage.py` — user subscription and digest persistence (JSON)
+- `bot/data/users.json` — user data storage (auto-created)
+- `bot/requirements.txt` — Python dependencies
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users can interact with the bot via:
+- `/news` — latest general headlines
+- `/top` — top story from each category
+- `/categories` — browse by topic (World, Tech, Business, Science, Sports, Health, Entertainment, General)
+- `/subscribe` — toggle category subscriptions via inline buttons
+- `/mysubs` — view and remove subscriptions
+- `/digest` — set a daily digest time (UTC hour via inline buttons) or disable it
+- `/search <keyword>` — search across all RSS feeds
+
+## Architecture decisions
+
+- RSS-only: no external API keys required; feeds from BBC, Reuters, TechCrunch, NASA, ESPN, etc.
+- APScheduler job runs every hour and sends digests to users whose configured hour matches UTC now
+- User data stored as flat JSON for simplicity (no database needed)
+- Inline keyboard buttons for all category/subscription/digest flows
+- feedparser handles malformed RSS gracefully
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Bot token: @NFU23_bot
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Digest times are in UTC
+- Some RSS feeds (Reuters) may occasionally be unreliable; the bot silently skips failed feeds
+- Always restart the workflow after code changes
