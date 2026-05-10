@@ -471,6 +471,23 @@ async def cmd_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /search <keyword>\nExample: /search Ukraine")
+        return
+    query = " ".join(context.args).lower()
+    matches = [e for e in post_log if query in e["title"].lower() or query in e["url"].lower()]
+    if not matches:
+        await update.message.reply_text(f'No posts found matching "{query}".')
+        return
+    entries = matches[-10:][::-1]
+    lines = [f'🔍 Posts matching "{query}" ({len(matches)} total, showing last {len(entries)}):\n']
+    for i, e in enumerate(entries, 1):
+        lines.append(f"{i}. [{e['ts']}]\n   {e['title']}\n   {e['url']}\n")
+    await update.message.reply_text("\n".join(lines), disable_web_page_preview=True)
+
+
+@owner_only
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not yesterday_stats:
         await update.message.reply_text(
@@ -518,8 +535,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/postnow     — fetch & post best article now\n"
         "/clearhashes — reset seen articles list\n"
         "/pintip      — pin the tip message to channel\n"
-        "/logs        — show last 10 posted articles\n"
-        "/report      — show yesterday's stats on demand\n"
+        "/logs           — show last 10 posted articles\n"
+        "/search <kw>    — search post history by keyword\n"
+        "/report         — show yesterday's stats on demand\n"
         "/help        — this message\n\n"
         f"📅 Schedule (Spain): {slots}\n"
         f"⭐ Min quality score: {MIN_SCORE}/10\n"
@@ -559,6 +577,7 @@ def main():
     app.add_handler(CommandHandler("clearhashes", cmd_clearhashes))
     app.add_handler(CommandHandler("pintip",      cmd_pin_tip))
     app.add_handler(CommandHandler("logs",        cmd_logs))
+    app.add_handler(CommandHandler("search",      cmd_search))
     app.add_handler(CommandHandler("report",      cmd_report))
     app.add_handler(CommandHandler("help",        cmd_help))
 
