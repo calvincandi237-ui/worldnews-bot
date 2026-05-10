@@ -43,6 +43,8 @@ TOPIC_CONTEXT = (
 )
 
 HASHES_FILE    = "data/posted_hashes.json"
+POST_LOG_FILE  = "data/post_log.json"
+POST_LOG_MAX   = 50       # entries kept on disk
 GEMINI_RETRIES = 3
 GEMINI_RETRY_DELAY = 10
 
@@ -67,6 +69,9 @@ stats = {
 
 # Yesterday's snapshot (populated at midnight before reset)
 yesterday_stats: dict = {}
+
+# Post history log (last POST_LOG_MAX entries, persisted to disk)
+post_log: list = []
 
 
 # ── Persistent hash storage ───────────────────────────────────────────────────
@@ -101,6 +106,42 @@ def save_hashes() -> None:
             }, f)
     except Exception as e:
         print(f"[STORAGE ERROR] Could not save hashes: {e}")
+
+
+# ── Post log persistence ─────────────────────────────────────────────────────
+def load_post_log() -> None:
+    global post_log
+    path = POST_LOG_FILE
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path) as f:
+            post_log = json.load(f)
+        print(f"[STORAGE] Loaded {len(post_log)} post log entries.")
+    except Exception as e:
+        print(f"[STORAGE ERROR] Could not load post log: {e}")
+
+
+def save_post_log() -> None:
+    try:
+        with open(POST_LOG_FILE, "w") as f:
+            json.dump(post_log[-POST_LOG_MAX:], f, indent=2)
+    except Exception as e:
+        print(f"[STORAGE ERROR] Could not save post log: {e}")
+
+
+def append_post_log(article: dict) -> None:
+    tz  = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    post_log.append({
+        "title": article["title"],
+        "url":   article["link"],
+        "ts":    now.strftime("%Y-%m-%d %H:%M"),
+    })
+    if len(post_log) > POST_LOG_MAX:
+        del post_log[:-POST_LOG_MAX]
+    save_post_log()
 
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
@@ -268,6 +309,7 @@ async def send_article(bot, article: dict) -> bool:
                 disable_web_page_preview=False,
             )
         mark_seen(article["link"], article["title"])
+        append_post_log(article)
         stats["posted_today"] += 1
         print(f"[POST] ✅ {article['title'][:70]}")
         return True
@@ -417,6 +459,18 @@ async def cmd_clearhashes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def cmd_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not post_log:
+        await update.message.reply_text("No posts yet this session.")
+        return
+    entries = post_log[-10:][::-1]  # last 10, newest first
+    lines = ["📋 Last posted articles (newest first):\n"]
+    for i, e in enumerate(entries, 1):
+        lines.append(f"{i}. [{e['ts']}]\n   {e['title']}\n   {e['url']}\n")
+    await update.message.reply_text("\n".join(lines), disable_web_page_preview=True)
+
+
+@owner_only
 async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not yesterday_stats:
         await update.message.reply_text(
@@ -464,6 +518,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/postnow     — fetch & post best article now\n"
         "/clearhashes — reset seen articles list\n"
         "/pintip      — pin the tip message to channel\n"
+        "/logs        — show last 10 posted articles\n"
         "/report      — show yesterday's stats on demand\n"
         "/help        — this message\n\n"
         f"📅 Schedule (Spain): {slots}\n"
@@ -492,6 +547,7 @@ def run_flask():
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main():
     load_hashes()
+    load_post_log()
     threading.Thread(target=run_flask, daemon=True).start()
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -502,6 +558,7 @@ def main():
     app.add_handler(CommandHandler("postnow",     cmd_postnow))
     app.add_handler(CommandHandler("clearhashes", cmd_clearhashes))
     app.add_handler(CommandHandler("pintip",      cmd_pin_tip))
+    app.add_handler(CommandHandler("logs",        cmd_logs))
     app.add_handler(CommandHandler("report",      cmd_report))
     app.add_handler(CommandHandler("help",        cmd_help))
 
