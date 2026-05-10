@@ -210,14 +210,23 @@ async def cmd_post_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def cmd_clearhashes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global posted_hashes
+    count = len(posted_hashes)
+    posted_hashes = set()
+    await update.message.reply_text(f"🗑 Очищено {count} хэшей. Теперь все статьи снова доступны.")
+
+
+@owner_only
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "/pause      — остановить постинг\n"
-        "/resume     — возобновить\n"
-        "/status     — текущий статус\n"
-        "/interval N — сменить интервал (часы)\n"
-        "/postnow    — опубликовать сейчас\n"
-        "/help       — эта справка"
+        "/pause        — остановить постинг\n"
+        "/resume       — возобновить\n"
+        "/status       — текущий статус\n"
+        "/interval N   — сменить интервал (часы)\n"
+        "/postnow      — опубликовать сейчас\n"
+        "/clearhashes  — сбросить список опубликованных\n"
+        "/help         — эта справка"
     )
 
 
@@ -242,8 +251,9 @@ def main():
     app.add_handler(CommandHandler("resume",   cmd_resume))
     app.add_handler(CommandHandler("status",   cmd_status))
     app.add_handler(CommandHandler("interval", cmd_interval))
-    app.add_handler(CommandHandler("postnow",  cmd_post_now))
-    app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(CommandHandler("postnow",     cmd_post_now))
+    app.add_handler(CommandHandler("clearhashes", cmd_clearhashes))
+    app.add_handler(CommandHandler("help",        cmd_help))
 
     app.job_queue.run_repeating(news_job, interval=interval_hours * 3600,
                                 first=10, name="news")
