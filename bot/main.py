@@ -17,7 +17,7 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHANNEL = os.environ["TELEGRAM_CHANNEL"]
 GEMINI_API_KEY   = os.environ["GEMINI_API_KEY"]
 OWNER_ID         = int(os.environ["OWNER_ID"])
-TIMEZONE         = "Europe/Moscow"
+TIMEZONE         = "Europe/Madrid"
 MIN_SCORE        = 7
 
 client = genai_client.Client(api_key=GEMINI_API_KEY)
