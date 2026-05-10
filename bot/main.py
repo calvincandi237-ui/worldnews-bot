@@ -57,13 +57,16 @@ posted_title_hashes: set = set()   # MD5 of normalized title
 is_paused: bool          = False
 start_time: datetime     = datetime.utcnow()
 
-# Daily counters (reset on bot restart — good enough for per-session stats)
+# Daily counters (reset at midnight Spain time)
 stats = {
-    "seen_today":    0,
-    "posted_today":  0,
+    "seen_today":     0,
+    "posted_today":   0,
     "rejected_today": 0,
-    "gemini_errors": 0,
+    "gemini_errors":  0,
 }
+
+# Yesterday's snapshot (populated at midnight before reset)
+yesterday_stats: dict = {}
 
 
 # ── Persistent hash storage ───────────────────────────────────────────────────
@@ -275,13 +278,40 @@ async def send_article(bot, article: dict) -> bool:
 
 # ── Daily stats reset ─────────────────────────────────────────────────────────
 async def reset_daily_stats(context: ContextTypes.DEFAULT_TYPE) -> None:
+    global yesterday_stats
     tz  = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    stats["seen_today"]    = 0
-    stats["posted_today"]  = 0
+    # Snapshot today before wiping
+    yesterday_stats = dict(stats)
+    yesterday_stats["date"] = now.strftime("%A, %B %d")
+    stats["seen_today"]     = 0
+    stats["posted_today"]   = 0
     stats["rejected_today"] = 0
-    stats["gemini_errors"] = 0
+    stats["gemini_errors"]  = 0
     print(f"[STATS] Daily counters reset at {now.strftime('%H:%M')} Spain time.")
+
+
+# ── Daily morning report ──────────────────────────────────────────────────────
+async def send_morning_report(context: ContextTypes.DEFAULT_TYPE) -> None:
+    tz  = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    if not yesterday_stats:
+        print("[REPORT] No yesterday stats yet — skipping morning report.")
+        return
+    date  = yesterday_stats.get("date", "yesterday")
+    text  = (
+        f"☀️ Good morning! Here's yesterday's summary ({date}):\n\n"
+        f"📰 Articles seen:      {yesterday_stats.get('seen_today', 0)}\n"
+        f"✅ Posts published:    {yesterday_stats.get('posted_today', 0)}\n"
+        f"❌ Rejected (<{MIN_SCORE}/10): {yesterday_stats.get('rejected_today', 0)}\n"
+        f"⚠️ Gemini errors:     {yesterday_stats.get('gemini_errors', 0)}\n\n"
+        f"Next post today: {next_slot_time()}"
+    )
+    try:
+        await context.bot.send_message(chat_id=OWNER_ID, text=text)
+        print(f"[REPORT] Morning report sent at {now.strftime('%H:%M')} Spain time.")
+    except Exception as e:
+        print(f"[REPORT ERROR] {e}")
 
 
 # ── Scheduled job ─────────────────────────────────────────────────────────────
@@ -387,6 +417,25 @@ async def cmd_clearhashes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not yesterday_stats:
+        await update.message.reply_text(
+            "No yesterday data yet — the first report will arrive tomorrow morning at 08:00."
+        )
+        return
+    date = yesterday_stats.get("date", "yesterday")
+    text = (
+        f"☀️ Yesterday's summary ({date}):\n\n"
+        f"📰 Articles seen:      {yesterday_stats.get('seen_today', 0)}\n"
+        f"✅ Posts published:    {yesterday_stats.get('posted_today', 0)}\n"
+        f"❌ Rejected (<{MIN_SCORE}/10): {yesterday_stats.get('rejected_today', 0)}\n"
+        f"⚠️ Gemini errors:     {yesterday_stats.get('gemini_errors', 0)}\n\n"
+        f"Next post today: {next_slot_time()}"
+    )
+    await update.message.reply_text(text)
+
+
+@owner_only
 async def cmd_pin_tip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await context.bot.send_message(
         chat_id=TELEGRAM_CHANNEL,
@@ -415,6 +464,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/postnow     — fetch & post best article now\n"
         "/clearhashes — reset seen articles list\n"
         "/pintip      — pin the tip message to channel\n"
+        "/report      — show yesterday's stats on demand\n"
         "/help        — this message\n\n"
         f"📅 Schedule (Spain): {slots}\n"
         f"⭐ Min quality score: {MIN_SCORE}/10\n"
@@ -452,14 +502,18 @@ def main():
     app.add_handler(CommandHandler("postnow",     cmd_postnow))
     app.add_handler(CommandHandler("clearhashes", cmd_clearhashes))
     app.add_handler(CommandHandler("pintip",      cmd_pin_tip))
+    app.add_handler(CommandHandler("report",      cmd_report))
     app.add_handler(CommandHandler("help",        cmd_help))
 
     app.job_queue.run_repeating(news_job, interval=3600, first=10, name="news")
 
-    # Reset daily stats at midnight Spain time (UTC offset handled by pytz in reset_daily_stats)
     tz = pytz.timezone(TIMEZONE)
-    midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
-    app.job_queue.run_daily(reset_daily_stats, time=midnight.timetz(), name="daily_reset")
+    # Reset stats at midnight Spain time
+    midnight  = datetime.now(tz).replace(hour=0,  minute=0, second=0, microsecond=0)
+    # Morning report at 08:00 Spain time
+    morning   = datetime.now(tz).replace(hour=8,  minute=0, second=0, microsecond=0)
+    app.job_queue.run_daily(reset_daily_stats,  time=midnight.timetz(), name="daily_reset")
+    app.job_queue.run_daily(send_morning_report, time=morning.timetz(),  name="morning_report")
 
     print("Bot started. Polling...")
     app.run_polling(drop_pending_updates=True)
