@@ -273,6 +273,17 @@ async def send_article(bot, article: dict) -> bool:
         return False
 
 
+# ── Daily stats reset ─────────────────────────────────────────────────────────
+async def reset_daily_stats(context: ContextTypes.DEFAULT_TYPE) -> None:
+    tz  = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    stats["seen_today"]    = 0
+    stats["posted_today"]  = 0
+    stats["rejected_today"] = 0
+    stats["gemini_errors"] = 0
+    print(f"[STATS] Daily counters reset at {now.strftime('%H:%M')} Spain time.")
+
+
 # ── Scheduled job ─────────────────────────────────────────────────────────────
 async def news_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     tz  = pytz.timezone(TIMEZONE)
@@ -444,6 +455,11 @@ def main():
     app.add_handler(CommandHandler("help",        cmd_help))
 
     app.job_queue.run_repeating(news_job, interval=3600, first=10, name="news")
+
+    # Reset daily stats at midnight Spain time (UTC offset handled by pytz in reset_daily_stats)
+    tz = pytz.timezone(TIMEZONE)
+    midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    app.job_queue.run_daily(reset_daily_stats, time=midnight.timetz(), name="daily_reset")
 
     print("Bot started. Polling...")
     app.run_polling(drop_pending_updates=True)
