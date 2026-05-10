@@ -20,7 +20,7 @@ OWNER_ID         = int(os.environ["OWNER_ID"])     # ваш Telegram ID
 TIMEZONE         = "Europe/Moscow"
 
 client = genai_client.Client(api_key=GEMINI_API_KEY)
-MODEL  = "gemini-1.5-flash"
+MODEL  = "gemini-2.0-flash-lite"
 
 # ── State ────────────────────────────────────────────────
 posted_hashes: set = set()
@@ -50,6 +50,9 @@ def fetch_news() -> list[dict]:
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
+            total_entries = len(feed.entries)
+            new_count = 0
+            skipped_hash = 0
             for entry in feed.entries[:8]:
                 title   = entry.get("title", "").strip()
                 summary = entry.get("summary", "").strip()
@@ -57,17 +60,24 @@ def fetch_news() -> list[dict]:
                 if not title or not link:
                     continue
                 h = hashlib.md5(title.encode()).hexdigest()
-                if h not in posted_hashes:
+                if h in posted_hashes:
+                    skipped_hash += 1
+                else:
                     articles.append({"title": title, "summary": summary,
                                      "link": link, "hash": h})
+                    new_count += 1
+            print(f"[FEED] {feed_url[:60]}... → entries={total_entries}, new={new_count}, skipped(hash)={skipped_hash}")
         except Exception as e:
-            print(f"Feed error: {e}")
+            print(f"[FEED ERROR] {feed_url[:60]}... → {e}")
+    print(f"[FETCH] Total new articles collected: {len(articles)}")
     return articles
 
 
 def score_articles(articles: list[dict]) -> list[dict]:
     if not articles:
+        print("[SCORE] No articles to score, returning empty list.")
         return []
+    print(f"[SCORE] Sending {len(articles)} articles to Gemini for scoring...")
     titles = "\n".join(f"{i+1}. {a['title']}" for i, a in enumerate(articles))
     prompt = (
         "Rate each headline by global importance 1-10. "
@@ -78,38 +88,62 @@ def score_articles(articles: list[dict]) -> list[dict]:
     try:
         resp   = client.models.generate_content(model=MODEL, contents=prompt)
         text   = resp.text.strip().lstrip("```json").rstrip("```").strip()
+        print(f"[SCORE] Gemini raw response: {text[:300]}")
         scores = sorted(json.loads(text), key=lambda x: x["score"], reverse=True)
-        return [articles[s["index"] - 1] for s in scores[:3]
-                if 0 < s["index"] <= len(articles)]
+        top    = [articles[s["index"] - 1] for s in scores[:3]
+                  if 0 < s["index"] <= len(articles)]
+        print(f"[SCORE] Top {len(top)} articles selected:")
+        for i, a in enumerate(top, 1):
+            print(f"  {i}. {a['title'][:80]}")
+        return top
     except Exception as e:
-        print(f"Scoring error: {e}")
+        print(f"[SCORE ERROR] {e}")
         return articles[:3]
 
 
-def rewrite_article(article: dict) -> str | None:
+def rewrite_all_articles(articles: list[dict]) -> list[str | None]:
+    """Rewrite all articles in a single Gemini call to minimise API usage."""
+    if not articles:
+        return []
+    items = ""
+    for i, a in enumerate(articles, 1):
+        items += (
+            f"--- ARTICLE {i} ---\n"
+            f"Title: {a['title']}\n"
+            f"Summary: {a['summary']}\n"
+            f"URL: {a['link']}\n\n"
+        )
     prompt = (
-        "Rewrite this news as a Telegram post. Rules:\n"
+        f"Rewrite each of the {len(articles)} news articles below as a separate Telegram post.\n"
+        "Rules for each post:\n"
         "- Max 180 words\n"
         "- Start with one relevant emoji\n"
         "- Factual, engaging tone\n"
         "- English\n"
         "- Last line: just the URL (no label)\n\n"
-        f"Title: {article['title']}\n"
-        f"Summary: {article['summary']}\n"
-        f"URL: {article['link']}"
+        "Separate each post with exactly the line: ---SPLIT---\n\n"
+        f"{items}"
     )
     try:
-        return client.models.generate_content(model=MODEL, contents=prompt).text.strip()
+        resp = client.models.generate_content(model=MODEL, contents=prompt)
+        parts = resp.text.strip().split("---SPLIT---")
+        results = [p.strip() for p in parts]
+        print(f"[REWRITE] Got {len(results)} rewrites from Gemini (expected {len(articles)})")
+        # Pad with None if Gemini returned fewer than expected
+        while len(results) < len(articles):
+            results.append(None)
+        return results[:len(articles)]
     except Exception as e:
-        print(f"Rewrite error: {e}")
-        return None
+        print(f"[REWRITE ERROR] {e}")
+        return [None] * len(articles)
 
 
 async def post_articles(bot, articles: list[dict]) -> int:
+    texts = rewrite_all_articles(articles)
     count = 0
-    for article in articles:
-        text = rewrite_article(article)
+    for article, text in zip(articles, texts):
         if not text:
+            print(f"[SKIP] No rewrite for: {article['title'][:60]}")
             continue
         image_url = get_og_image(article["link"])
         try:
@@ -127,9 +161,9 @@ async def post_articles(bot, articles: list[dict]) -> int:
                 )
             posted_hashes.add(article["hash"])
             count += 1
-            print(f"Posted: {article['title'][:60]}")
+            print(f"[POST] ✅ {article['title'][:60]}")
         except Exception as e:
-            print(f"Telegram error: {e}")
+            print(f"[POST ERROR] {e}")
     return count
 
 
