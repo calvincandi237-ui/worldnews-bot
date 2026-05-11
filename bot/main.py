@@ -563,12 +563,18 @@ def run_flask():
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+async def post_init(application: Application) -> None:
+    """Drop any active webhook / stale polling session before we start."""
+    await application.bot.delete_webhook(drop_pending_updates=True)
+    print("[STARTUP] Webhook cleared — safe to poll.")
+
+
 def main():
     load_hashes()
     load_post_log()
     threading.Thread(target=run_flask, daemon=True).start()
 
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("pause",       cmd_pause))
     app.add_handler(CommandHandler("resume",      cmd_resume))
