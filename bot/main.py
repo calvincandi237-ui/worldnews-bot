@@ -454,21 +454,50 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def format_post_raw(article: dict) -> str:
+    """Plain formatter — no Gemini, no AI. Used when quota is exhausted."""
+    title   = article["title"]
+    summary = article["summary"].strip()
+    url     = article["link"]
+    # Build a clean readable post
+    lines = [f"📰 {title}"]
+    if summary:
+        lines.append("")
+        lines.append(summary)
+    lines.append("")
+    lines.append(url)
+    return "\n".join(lines)
+
+
 @owner_only
 async def cmd_postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 Fetching and scoring articles...")
+    await update.message.reply_text("🔄 Fetching latest article from RSS (no AI)...")
     articles = fetch_news()
-    best     = score_and_pick(articles)
-    if best is None:
-        await update.message.reply_text(
-            f"😕 No article scored {MIN_SCORE}+. Nothing posted."
-        )
+    if not articles:
+        await update.message.reply_text("😕 No new articles found (all already seen).")
         return
-    success = await send_article(context.bot, best)
-    if success:
-        await update.message.reply_text(f"✅ Posted:\n{best['title']}")
-    else:
-        await update.message.reply_text("❌ Found article but Gemini formatting failed.")
+    article = articles[0]   # most recent unseen article
+    text    = format_post_raw(article)
+    image_url = get_og_image(article["link"])
+    try:
+        if image_url:
+            await context.bot.send_photo(
+                chat_id=TELEGRAM_CHANNEL,
+                photo=image_url,
+                caption=text,
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHANNEL,
+                text=text,
+                disable_web_page_preview=False,
+            )
+        mark_seen(article["link"], article["title"])
+        append_post_log(article)
+        stats["posted_today"] += 1
+        await update.message.reply_text(f"✅ Posted (raw, no AI):\n{article['title']}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Send failed: {e}")
 
 
 @owner_only
