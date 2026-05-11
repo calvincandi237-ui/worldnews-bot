@@ -21,7 +21,7 @@ TELEGRAM_CHANNEL = os.environ["TELEGRAM_CHANNEL"]
 GEMINI_API_KEY   = os.environ["GEMINI_API_KEY"]
 OWNER_ID         = int(os.environ["OWNER_ID"])
 TIMEZONE         = "Europe/Madrid"
-MIN_SCORE        = 5
+MIN_SCORE        = 2
 
 client = genai_client.Client(api_key=GEMINI_API_KEY)
 MODEL  = "gemini-2.0-flash-lite"
