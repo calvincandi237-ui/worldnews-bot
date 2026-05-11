@@ -3,6 +3,7 @@ import json
 import hashlib
 import re
 import time
+import signal
 import threading
 import feedparser
 import requests
@@ -42,6 +43,7 @@ TOPIC_CONTEXT = (
     "celebrity and media figures, AI and neural networks, social media platforms, robotics."
 )
 
+PID_FILE       = "data/bot.pid"
 HASHES_FILE    = "data/posted_hashes.json"
 POST_LOG_FILE  = "data/post_log.json"
 POST_LOG_MAX   = 50       # entries kept on disk
@@ -72,6 +74,27 @@ yesterday_stats: dict = {}
 
 # Post history log (last POST_LOG_MAX entries, persisted to disk)
 post_log: list = []
+
+
+# ── PID file lock (kills stale instances on startup) ─────────────────────────
+def acquire_pid_lock() -> None:
+    os.makedirs("data", exist_ok=True)
+    if os.path.exists(PID_FILE):
+        try:
+            old_pid = int(open(PID_FILE).read().strip())
+            if old_pid != os.getpid():
+                print(f"[PID] Killing stale instance (pid={old_pid})...")
+                try:
+                    os.kill(old_pid, signal.SIGTERM)
+                    time.sleep(3)          # give it time to release the poll
+                    os.kill(old_pid, signal.SIGKILL)   # force-kill if still alive
+                except ProcessLookupError:
+                    pass                   # already gone
+        except Exception as e:
+            print(f"[PID] Could not kill old instance: {e}")
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    print(f"[PID] Lock acquired (pid={os.getpid()})")
 
 
 # ── Persistent hash storage ───────────────────────────────────────────────────
@@ -570,6 +593,7 @@ async def post_init(application: Application) -> None:
 
 
 def main():
+    acquire_pid_lock()
     load_hashes()
     load_post_log()
     threading.Thread(target=run_flask, daemon=True).start()
