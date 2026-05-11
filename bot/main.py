@@ -17,7 +17,7 @@ import pytz
 
 # ── Config ───────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHANNEL = os.environ["TELEGRAM_CHANNEL"]
+TELEGRAM_CHANNEL = os.environ["TELEGRAM_CHANNEL"].strip()
 GEMINI_API_KEY   = os.environ["GEMINI_API_KEY"]
 OWNER_ID         = int(os.environ["OWNER_ID"])
 TIMEZONE         = "Europe/Madrid"
@@ -479,6 +479,7 @@ async def cmd_postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     article = articles[0]   # most recent unseen article
     text    = format_post_raw(article)
     image_url = get_og_image(article["link"])
+    print(f"[POSTNOW] Posting to channel: {repr(TELEGRAM_CHANNEL)}")
     try:
         if image_url:
             await context.bot.send_photo(
@@ -497,7 +498,9 @@ async def cmd_postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats["posted_today"] += 1
         await update.message.reply_text(f"✅ Posted (raw, no AI):\n{article['title']}")
     except Exception as e:
-        await update.message.reply_text(f"❌ Send failed: {e}")
+        await update.message.reply_text(
+            f"❌ Send failed: {e}\n\nChannel value used: {repr(TELEGRAM_CHANNEL)}"
+        )
 
 
 @owner_only
@@ -650,6 +653,7 @@ def main():
     app.job_queue.run_daily(reset_daily_stats,  time=midnight.timetz(), name="daily_reset")
     app.job_queue.run_daily(send_morning_report, time=morning.timetz(),  name="morning_report")
 
+    print(f"[CONFIG] TELEGRAM_CHANNEL = {repr(TELEGRAM_CHANNEL)}")
     print("Bot started. Polling...")
     app.run_polling(drop_pending_updates=True)
 
