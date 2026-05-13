@@ -24,7 +24,7 @@ TIMEZONE         = "Europe/Madrid"
 MIN_SCORE        = 2
 
 client = genai_client.Client(api_key=GEMINI_API_KEY)
-MODEL  = "gemini-2.0-flash
+MODEL  = "gemini-2.0-flash"
 
 SCHEDULE_HOURS = [8, 10, 13, 16, 19, 21]
 
