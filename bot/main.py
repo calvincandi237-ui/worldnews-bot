@@ -628,7 +628,7 @@ def main():
     acquire_pid_lock()
     load_hashes()
     load_post_log()
-    threading.Thread(target=run_flask, daemon=True).start()
+    # threading.Thread(target=run_flask, daemon=True).start()
 
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
