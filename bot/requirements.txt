@@ -1,2 +1,7 @@
-python-telegram-bot[job-queue]==21.11.1
-feedparser==6.0.11
+python-telegram-bot[job-queue]==20.8
+google-generativeai
+pytz
+flask
+apscheduler
+feedparser
+beautifulsoup4
